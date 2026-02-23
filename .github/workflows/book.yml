@@ -1,0 +1,110 @@
+name: Book
+run-name: "Book: ${{ inputs.refs || github.ref }}"
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: "Refs to build, comma-separated (e.g. main, v0.1.0, v0.1.1)"
+        default: "main"
+      mdbook-version:
+        description: "mdbook version"
+        default: "0.5"
+      mdbook-plugins:
+        description: "Comma-separated mdbook plugins"
+        default: "mdbook-katex@0.10.0-alpha, mdbook-mermaid@0.17"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "book-${{ inputs.refs || github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  determine-refs:
+    runs-on: ubuntu-latest
+    if: github.repository == 'AzurIce/ranim'
+    outputs:
+      refs-json: ${{ steps.refs.outputs.refs-json }}
+    steps:
+      - name: Determine refs
+        id: refs
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            REF="${{ github.ref }}"
+            REF="${REF#refs/tags/}"
+            REF="${REF#refs/heads/}"
+            echo "refs-json=[\"${REF}\"]" >> "$GITHUB_OUTPUT"
+          else
+            # Parse comma-separated input into JSON array
+            REFS=$(echo '${{ inputs.refs }}' | jq -R -c 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))')
+            echo "refs-json=${REFS}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: determine-refs
+    strategy:
+      matrix:
+        ref: ${{ fromJson(needs.determine-refs.outputs.refs-json) }}
+    uses: ./.github/workflows/build-book.yml
+    with:
+      ref: ${{ matrix.ref }}
+      artifact-name: book-${{ matrix.ref }}
+      site-url: ""
+      mdbook-version: ${{ inputs.mdbook-version || '0.5' }}
+      mdbook-plugins: ${{ inputs.mdbook-plugins || 'mdbook-katex@0.10.0-alpha, mdbook-mermaid@0.17' }}
+
+  deploy:
+    needs: [determine-refs, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: book-*
+          path: /tmp/books
+
+      - name: Assemble output
+        run: |
+          mkdir output
+          for dir in /tmp/books/book-*/; do
+            [ -d "$dir" ] || continue
+            ref=$(basename "$dir" | sed 's/^book-//')
+            mkdir -p "output/$ref"
+            cp -r "$dir"* "output/$ref/"
+          done
+
+      - name: Deploy book
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.BOOK_DEPLOY_KEY }}
+          external_repository: AzurIce/ranim-book
+          publish_dir: ./output
+          keep_files: true
+
+      - name: Update versions.json
+        uses: actions/checkout@v4
+        with:
+          repository: AzurIce/ranim-book
+          ref: gh-pages
+          ssh-key: ${{ secrets.BOOK_DEPLOY_KEY }}
+          path: gh-pages
+
+      - name: Generate versions.json and push
+        run: |
+          cd gh-pages
+          VERSIONS=$(find . -maxdepth 1 -type d -name 'v*' -printf '%f\n' | sort -V)
+          echo '["main"' > versions.json
+          for v in $VERSIONS; do
+            echo ", \"$v\"" >> versions.json
+          done
+          echo ']' >> versions.json
+          cat versions.json | jq '.' > versions.json.tmp && mv versions.json.tmp versions.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add versions.json
+          git diff --cached --quiet || (git commit -m "Update versions.json" && git push)

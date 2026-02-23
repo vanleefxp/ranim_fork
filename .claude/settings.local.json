@@ -10,7 +10,13 @@
       "Bash(git stash:*)",
       "Bash(git checkout:*)",
       "Bash(cargo bench:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(git pull:*)"
+    ],
+    "additionalDirectories": [
+      "/Volumes/Files/_ranim"
     ]
   }
 }
