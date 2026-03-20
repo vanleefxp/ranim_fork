@@ -56,7 +56,7 @@ fn hanoi(r: &mut RanimScene, n: usize) {
                 rect.stroke_width = 0.0;
                 rect.set_color(color).move_anchor_to(
                     AabbPoint(dvec3(0.0, -1.0, 0.0)),
-                    dvec3(-rod_section_width, -4.0 + disk_height * i as f64, 0.0),
+                    dvec3(-rod_section_width, -4.0 + disk_height * i as f64, 0.001),
                 );
             });
             (r.insert(disk.clone()), disk)
@@ -109,13 +109,13 @@ fn hanoi(r: &mut RanimScene, n: usize) {
 }
 
 #[scene]
-#[output(dir = "hanoi")]
+#[output(dir = "./output/hanoi")]
 fn hanoi_5(r: &mut RanimScene) {
     hanoi(r, 5);
 }
 
 #[scene(name = "hanoi")]
-#[output(dir = "hanoi")]
+#[output(dir = "./output/hanoi")]
 fn hanoi_10(r: &mut RanimScene) {
     hanoi(r, 10);
 }
